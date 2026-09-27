@@ -1,13 +1,14 @@
-import { useFormik } from 'formik';
+import { ErrorMessage, Field, Form, Formik } from 'formik';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import * as Yup from 'yup';
+import RequestErrorMessage from '../ErrorMessage/ErrorMessage';
+import { createNote } from '../../services/noteService';
 import type { CreateNoteParams } from '../../services/noteService';
 import type { NoteTag } from '../../types/note';
 import css from './NoteForm.module.css';
 
 interface NoteFormProps {
-  onSubmit: (values: CreateNoteParams) => Promise<void>;
-  onCancel: () => void;
-  isSubmitting: boolean;
+  onClose: () => void;
 }
 
 const NOTE_TAGS: NoteTag[] = [
@@ -29,102 +30,91 @@ const validationSchema = Yup.object({
     .required('Tag is required'),
 });
 
-export default function NoteForm({
-  onSubmit,
-  onCancel,
-  isSubmitting,
-}: NoteFormProps) {
-  const formik = useFormik<CreateNoteParams>({
-    initialValues: {
-      title: '',
-      content: '',
-      tag: 'Todo',
-    },
-    validationSchema,
-    onSubmit: async (values, actions) => {
-      try {
-        await onSubmit(values);
-        actions.resetForm();
-      } catch {
-        // The mutation error is displayed by the parent component.
-      } finally {
-        actions.setSubmitting(false);
-      }
+export default function NoteForm({ onClose }: NoteFormProps) {
+  const queryClient = useQueryClient();
+
+  const createMutation = useMutation({
+    mutationFn: createNote,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['notes'] });
+      onClose();
     },
   });
 
   return (
-    <form className={css.form} onSubmit={formik.handleSubmit}>
-      <div className={css.formGroup}>
-        <label htmlFor="title">Title</label>
-        <input
-          id="title"
-          type="text"
-          name="title"
-          className={css.input}
-          value={formik.values.title}
-          onChange={formik.handleChange}
-          onBlur={formik.handleBlur}
-        />
-        <span className={css.error}>
-          {formik.touched.title && formik.errors.title}
-        </span>
-      </div>
+    <Formik<CreateNoteParams>
+      initialValues={{ title: '', content: '', tag: 'Todo' }}
+      validationSchema={validationSchema}
+      onSubmit={async (values, actions) => {
+        try {
+          await createMutation.mutateAsync(values);
+          actions.resetForm();
+        } catch {
+          // The request error is displayed above the form fields.
+        } finally {
+          actions.setSubmitting(false);
+        }
+      }}
+    >
+      {({ isSubmitting }) => (
+        <Form className={css.form}>
+          {createMutation.isError && (
+            <RequestErrorMessage message="Could not create the note." />
+          )}
 
-      <div className={css.formGroup}>
-        <label htmlFor="content">Content</label>
-        <textarea
-          id="content"
-          name="content"
-          rows={8}
-          className={css.textarea}
-          value={formik.values.content}
-          onChange={formik.handleChange}
-          onBlur={formik.handleBlur}
-        />
-        <span className={css.error}>
-          {formik.touched.content && formik.errors.content}
-        </span>
-      </div>
+          <div className={css.formGroup}>
+            <label htmlFor="title">Title</label>
+            <Field id="title" type="text" name="title" className={css.input} />
+            <ErrorMessage name="title" component="span" className={css.error} />
+          </div>
 
-      <div className={css.formGroup}>
-        <label htmlFor="tag">Tag</label>
-        <select
-          id="tag"
-          name="tag"
-          className={css.select}
-          value={formik.values.tag}
-          onChange={formik.handleChange}
-          onBlur={formik.handleBlur}
-        >
-          {NOTE_TAGS.map((tag) => (
-            <option value={tag} key={tag}>
-              {tag}
-            </option>
-          ))}
-        </select>
-        <span className={css.error}>
-          {formik.touched.tag && formik.errors.tag}
-        </span>
-      </div>
+          <div className={css.formGroup}>
+            <label htmlFor="content">Content</label>
+            <Field
+              as="textarea"
+              id="content"
+              name="content"
+              rows={8}
+              className={css.textarea}
+            />
+            <ErrorMessage
+              name="content"
+              component="span"
+              className={css.error}
+            />
+          </div>
 
-      <div className={css.actions}>
-        <button
-          type="button"
-          className={css.cancelButton}
-          disabled={isSubmitting}
-          onClick={onCancel}
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          className={css.submitButton}
-          disabled={isSubmitting}
-        >
-          Create note
-        </button>
-      </div>
-    </form>
+          <div className={css.formGroup}>
+            <label htmlFor="tag">Tag</label>
+            <Field as="select" id="tag" name="tag" className={css.select}>
+              {NOTE_TAGS.map((tag) => (
+                <option value={tag} key={tag}>
+                  {tag}
+                </option>
+              ))}
+            </Field>
+            <ErrorMessage name="tag" component="span" className={css.error} />
+          </div>
+
+          <div className={css.actions}>
+            <button
+              type="button"
+              className={css.cancelButton}
+              disabled={isSubmitting}
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className={css.submitButton}
+              disabled={isSubmitting}
+            >
+              Create note
+            </button>
+          </div>
+        </Form>
+      )}
+    </Formik>
   );
 }
